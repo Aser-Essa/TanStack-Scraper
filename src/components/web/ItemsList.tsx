@@ -29,7 +29,9 @@ export default function ItemsList({ data, q, status }: ItemsListProps) {
     const matchQuery =
       q === '' ||
       item.title?.toLowerCase().includes(q.toLowerCase()) ||
-      item.tags.some((tag) => tag.toLowerCase().includes(q.toLowerCase()))
+      item.tags.some((tag: string) =>
+        tag.toLowerCase().includes(q.toLowerCase()),
+      )
 
     const matchStatus = status === 'all' || item.status === status
 
@@ -73,7 +75,13 @@ export default function ItemsList({ data, q, status }: ItemsListProps) {
             key={item.id}
             className=" overflow-hidden group transition-all hover:shadow-lg pt-0"
           >
-            <Link to="/dashboard" className=" block">
+            <Link
+              to="/dashboard/items/$itemId"
+              params={{
+                itemId: item.id,
+              }}
+              className=" block"
+            >
               {item.ogImage && (
                 <div className=" aspect-video w-full overflow-hidden  bg-muted">
                   <img

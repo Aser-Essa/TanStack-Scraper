@@ -1,9 +1,13 @@
 import { prisma } from '#/db'
+import type { SavedItem } from '#/generated/prisma/client'
 import { firecrawl } from '#/lib/firecrawl'
-import { authFnMiddleware } from '#/middlewares/auth.ts'
+import { authFnMiddleware } from '#/middlewares/auth'
 import { bulkImportSchema, extractSchema, importSchema } from '#/schemas/import'
 import { createServerFn } from '@tanstack/react-start'
+import { notFound } from '@tanstack/react-router'
 import z from 'zod'
+import { generateText } from 'ai'
+import { openrouter } from '#/lib/openRouter'
 
 export const scrapeUrlFn = createServerFn({
   method: 'POST',
@@ -169,7 +173,7 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
 
 export const getItemsFn = createServerFn({ method: 'GET' })
   .middleware([authFnMiddleware])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<SavedItem[]> => {
     const { user } = context.session
 
     const items = await prisma.savedItem.findMany({
@@ -182,4 +186,75 @@ export const getItemsFn = createServerFn({ method: 'GET' })
     })
 
     return items
+  })
+
+export const getItemById = createServerFn({ method: 'GET' })
+  .middleware([authFnMiddleware])
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ context, data }) => {
+    const item = await prisma.savedItem.findUnique({
+      where: {
+        userId: context.session.user.id,
+        id: data.id,
+      },
+    })
+
+    if (!item) {
+      throw notFound()
+    }
+
+    return item
+  })
+
+export const saveSummaryAndGenerateTagsFn = createServerFn({
+  method: 'POST',
+})
+  .middleware([authFnMiddleware])
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      summary: z.string(),
+    }),
+  )
+  .handler(async ({ context, data }) => {
+    const { user } = context.session
+
+    const existing = await prisma.savedItem.findUnique({
+      where: {
+        id: data.id,
+        userId: user.id,
+      },
+    })
+
+    if (!existing) {
+      throw notFound()
+    }
+
+    const { text } = await generateText({
+      model: openrouter.chat('xiaomi/mimo-v2-flash'),
+      system: `You are a helpful assistant that extracts relevant tags from content summaries.
+                Extract 3-5 short, relevant tags that categorize the content.
+                Return ONLY a comma-separated list of tags, nothing else.
+                Example: technology, programming, web development, javascript`,
+      prompt: `Extract tags from this summary: \n\n${data.summary}`,
+    })
+
+    const tags = text
+      .split(',')
+      .map((tag) => tag.trim().toLowerCase())
+      .filter((tag) => tag.length > 0)
+      .slice(0, 5)
+
+    const item = await prisma.savedItem.update({
+      where: {
+        id: data.id,
+        userId: user.id,
+      },
+      data: {
+        summary: data.summary,
+        tags: tags,
+      },
+    })
+
+    return item
   })

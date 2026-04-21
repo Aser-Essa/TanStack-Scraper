@@ -6,22 +6,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#/components/ui/select'
+import ItemsGridSkeleton from '#/components/web/ItemsGridSkeleton'
 import ItemsList from '#/components/web/ItemsList'
 import { getItemsFn } from '#/data/items'
 import { ItemStatus } from '#/generated/prisma/enums'
 import { itemsSearchSchema } from '#/schemas/items'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Await, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { useEffect, useState } from 'react'
 
 export const Route = createFileRoute('/dashboard/items/')({
   component: RouteComponent,
-  loader: () => getItemsFn(),
+  loader: () => ({ itemsPromise: getItemsFn() }),
   validateSearch: zodValidator(itemsSearchSchema),
+  head: () => ({
+    meta: [
+      {
+        title: 'Saved Items',
+      },
+      {
+        property: 'og:title',
+        content: 'Saved Items',
+      },
+    ],
+  }),
 })
 
 function RouteComponent() {
-  const data = Route.useLoaderData()
+  const { itemsPromise } = Route.useLoaderData()
   const { q, status } = Route.useSearch()
   const [searchInput, setSearchInput] = useState(q)
   const navigate = useNavigate({ from: Route.fullPath })
@@ -73,8 +85,9 @@ function RouteComponent() {
           </SelectContent>
         </Select>
       </div>
-
-      <ItemsList data={data} q={q} status={status} />
+      <Await promise={itemsPromise} fallback={<ItemsGridSkeleton />}>
+        {(data) => <ItemsList data={data} q={q} status={status} />}
+      </Await>
     </div>
   )
 }
