@@ -2,6 +2,7 @@ import { prisma } from '#/db'
 import type { SavedItem } from '#/generated/prisma/client'
 import { firecrawl } from '#/lib/firecrawl'
 import { authFnMiddleware } from '#/middlewares/auth'
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import {
   bulkImportSchema,
   extractSchema,
@@ -39,6 +40,7 @@ export const scrapeUrlFn = createServerFn({
           {
             type: 'json',
             schema: extractSchema,
+            // prompt: 'Please extract the author and also publishedAt timestamp',
           },
         ],
         location: {
@@ -134,6 +136,8 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
             {
               type: 'json',
               schema: extractSchema,
+              // prompt:
+              //   'Please extract the author and also publishedAt timestamp',
             },
           ],
           location: {
