@@ -12,13 +12,12 @@ import { getItemsFn } from '#/data/items'
 import { ItemStatus } from '#/generated/prisma/enums'
 import { itemsSearchSchema } from '#/schemas/items'
 import { Await, createFileRoute, useNavigate } from '@tanstack/react-router'
-import { zodValidator } from '@tanstack/zod-adapter'
 import { useEffect, useState } from 'react'
 
 export const Route = createFileRoute('/dashboard/items/')({
   component: RouteComponent,
   loader: () => ({ itemsPromise: getItemsFn() }),
-  validateSearch: zodValidator(itemsSearchSchema),
+  validateSearch: itemsSearchSchema,
   head: () => ({
     meta: [
       {
