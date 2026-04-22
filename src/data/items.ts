@@ -2,12 +2,19 @@ import { prisma } from '#/db'
 import type { SavedItem } from '#/generated/prisma/client'
 import { firecrawl } from '#/lib/firecrawl'
 import { authFnMiddleware } from '#/middlewares/auth'
-import { bulkImportSchema, extractSchema, importSchema } from '#/schemas/import'
+import {
+  bulkImportSchema,
+  extractSchema,
+  importSchema,
+  searchSchema,
+} from '#/schemas/import'
 import { createServerFn } from '@tanstack/react-start'
 import { notFound } from '@tanstack/react-router'
 import z from 'zod'
 import { generateText } from 'ai'
 import { openrouter } from '#/lib/openRouter'
+import type { SearchResultWeb } from '@mendable/firecrawl-js'
+import type { BulkScrapeProgress } from '#/lib/types'
 
 export const scrapeUrlFn = createServerFn({
   method: 'POST',
@@ -104,10 +111,12 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
       urls: z.array(z.string().url()),
     }),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async function* ({ data, context }) {
+    const total = data.urls.length
+
     const { user } = context.session
 
-    for (const url of data.urls) {
+    for (const [i, url] of data.urls.entries()) {
       const item = await prisma.savedItem.create({
         data: {
           url,
@@ -115,6 +124,8 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
           status: 'PENDING',
         },
       })
+
+      let status: BulkScrapeProgress['status'] = 'success'
 
       try {
         const result = await firecrawl.scrape(url, {
@@ -158,7 +169,17 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
             status: 'COMPLETED',
           },
         })
+
+        const progress: BulkScrapeProgress = {
+          completed: i + 1,
+          total,
+          url,
+          status,
+        }
+
+        yield progress
       } catch {
+        status = 'failed'
         await prisma.savedItem.update({
           where: {
             id: item.id,
@@ -167,6 +188,15 @@ export const bulkScrapeUrlsFn = createServerFn({ method: 'POST' })
             status: 'FAILED',
           },
         })
+
+        const progress: BulkScrapeProgress = {
+          completed: i + 1,
+          total,
+          url,
+          status,
+        }
+
+        yield progress
       }
     }
   })
@@ -257,4 +287,23 @@ export const saveSummaryAndGenerateTagsFn = createServerFn({
     })
 
     return item
+  })
+
+export const searchWebFn = createServerFn({
+  method: 'POST',
+})
+  .middleware([authFnMiddleware])
+  .inputValidator(searchSchema)
+  .handler(async ({ data }) => {
+    const results = await firecrawl.search(data.query, {
+      limit: 15,
+      location: 'Germany',
+      tbs: 'qdr:y',
+    })
+
+    return results.web?.map((item) => ({
+      url: (item as SearchResultWeb).url,
+      title: (item as SearchResultWeb).title,
+      description: (item as SearchResultWeb).description,
+    }))
   })

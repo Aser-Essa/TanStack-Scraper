@@ -14,8 +14,10 @@ import {
   FieldLabel,
 } from '#/components/ui/field'
 import { Input } from '#/components/ui/input'
+import { Progress } from '#/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { bulkScrapeUrlsFn, mapUrlFn, scrapeUrlFn } from '#/data/items'
+import type { BulkScrapeProgress } from '#/lib/types'
 import { bulkImportSchema, importSchema } from '#/schemas/import'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { SearchResultWeb } from '@mendable/firecrawl-js'
@@ -41,6 +43,8 @@ function RouteComponent() {
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set())
   const isAllSelected = selectedUrls.size === discoveredLinks.length
 
+  const [progress, setProgress] = useState<BulkScrapeProgress | null>(null)
+
   function handleSelectAll() {
     if (isAllSelected) {
       setSelectedUrls(new Set())
@@ -60,6 +64,18 @@ function RouteComponent() {
 
     setSelectedUrls(newSelected)
   }
+  // startBulkTransition(async () => {
+  //   if (selectedUrls.size === 0) {
+  //     toast.error('Please select at least one URL to import.')
+  //     return
+  //   }
+
+  //   await bulkScrapeUrlsFn({
+  //     data: { urls: Array.from(selectedUrls) },
+  //   })
+
+  //   toast.success(`Successfully imported ${selectedUrls.size} URLs`)
+  // })
 
   function handleBulkImport() {
     startBulkTransition(async () => {
@@ -68,11 +84,35 @@ function RouteComponent() {
         return
       }
 
-      await bulkScrapeUrlsFn({
-        data: { urls: Array.from(selectedUrls) },
+      setProgress({
+        total: selectedUrls.size,
+        completed: 0,
+        url: '',
+        status: 'success',
       })
 
-      toast.success(`Successfully imported ${selectedUrls.size} URLs`)
+      let successCount = 0
+      let failedCount = 0
+
+      for await (const update of await bulkScrapeUrlsFn({
+        data: { urls: Array.from(selectedUrls) },
+      })) {
+        setProgress(update)
+
+        if (update.status === 'success') {
+          successCount++
+        } else {
+          failedCount++
+        }
+      }
+
+      if (failedCount > 0) {
+        toast.success(`Imported ${successCount} URLs (${failedCount} failed)`)
+      } else {
+        toast.success(`Successfully imported ${successCount} URLs`)
+      }
+
+      setProgress(null)
     })
   }
 
@@ -228,6 +268,7 @@ function RouteComponent() {
                         </Field>
                       )}
                     />
+
                     <Button type="submit" disabled={isPending}>
                       {isPending ? (
                         <>
@@ -291,6 +332,28 @@ function RouteComponent() {
                       ))}
                     </div>
 
+                    {progress && (
+                      <>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className=" text-muted-foreground">
+                              Importing: {progress.completed} / {progress.total}
+                            </span>
+
+                            <span className="font-medium">
+                              {Math.round(
+                                (progress.completed / progress.total) * 100,
+                              )}
+                              %
+                            </span>
+                          </div>
+                          <Progress
+                            value={(progress.completed / progress.total) * 100}
+                          />
+                        </div>
+                      </>
+                    )}
+
                     <Button
                       onClick={handleBulkImport}
                       disabled={bulkIsPending}
@@ -300,7 +363,9 @@ function RouteComponent() {
                       {bulkIsPending ? (
                         <>
                           <Loader2 className=" size-4 animate-spin" />{' '}
-                          Importing...
+                          {progress
+                            ? `Importing ${progress.completed} / ${progress.total}...`
+                            : 'Starting...'}
                         </>
                       ) : (
                         `Import ${selectedUrls.size} URLs`
